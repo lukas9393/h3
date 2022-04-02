@@ -3,10 +3,11 @@ use std::time::SystemTime;
 
 use futures::future;
 use h3_quinn::quinn;
+use http::Method;
 use rustls::{self, client::ServerCertVerified};
 use rustls::{Certificate, ServerName};
 use structopt::StructOpt;
-use tokio::{self, io::AsyncWriteExt};
+use tokio;
 
 use h3_quinn::{self, quinn::crypto::rustls::Error};
 
@@ -18,7 +19,7 @@ struct Opt {
     #[structopt(long)]
     pub insecure: bool,
 
-    #[structopt()]
+    #[structopt(default_value = "https://localhost:4433/vpn")]
     pub uri: String,
 }
 
@@ -58,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_safe_default_cipher_suites()
         .with_safe_default_kx_groups()
         .with_protocol_versions(&[&rustls::version::TLS13])?;
-    let mut tls_config = if !opt.insecure {
+    let mut tls_config = if opt.insecure {
         let mut roots = rustls::RootCertStore::empty();
         match rustls_native_certs::load_native_certs() {
             Ok(certs) => {
@@ -107,7 +108,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = async move {
         eprintln!("Sending request ...");
 
-        let req = http::Request::builder().uri(dest).body(())?;
+        let req = http::Request::builder()
+            .method(Method::CONNECT)
+            .uri(dest)
+            .header(":protocol", "connect-ip")
+            .header("Capsule-Protocol", "?1")
+            .body(())?;
 
         let mut stream = send_request.send_request(req).await?;
         stream.finish().await?;
@@ -118,11 +124,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Response: {:?} {}", resp.version(), resp.status());
         eprintln!("Headers: {:#?}", resp.headers());
 
-        while let Some(mut chunk) = stream.recv_data().await? {
-            let mut out = tokio::io::stdout();
-            out.write_all_buf(&mut chunk).await.expect("write_all");
-            out.flush().await.expect("flush");
+        while let Some(capsule) = stream.recv_capsule().await? {
+            match capsule {
+                h3::capsule::Capsule::AddressAssign(c) => {
+                    println!("AddressAssign: {}", c.ip_address)
+                }
+                h3::capsule::Capsule::AddressRequest(_) => (),
+                h3::capsule::Capsule::RouteAdvertisement(_) => (),
+            }
         }
+
         Ok::<_, Box<dyn std::error::Error>>(())
     };
 

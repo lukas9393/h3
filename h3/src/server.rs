@@ -11,6 +11,7 @@ use quic::StreamId;
 use tokio::sync::mpsc;
 
 use crate::{
+    capsule::Capsule,
     connection::{self, ConnectionInner, ConnectionState, SharedStateRef},
     error::{Code, Error},
     frame::FrameStream,
@@ -321,6 +322,10 @@ where
         self.inner.recv_data().await
     }
 
+    pub async fn recv_capsule(&mut self) -> Result<Option<Capsule>, Error> {
+        self.inner.recv_capsule().await
+    }
+
     pub fn stop_sending(&mut self, error_code: crate::error::Code) {
         self.inner.stream.stop_sending(error_code)
     }
@@ -363,6 +368,10 @@ where
 
     pub async fn send_trailers(&mut self, trailers: HeaderMap) -> Result<(), Error> {
         self.inner.send_trailers(trailers).await
+    }
+
+    pub async fn send_capsule(&mut self, capsule: Capsule) -> Result<(), Error> {
+        self.inner.send_capsule(capsule).await
     }
 
     pub async fn finish(&mut self) -> Result<(), Error> {

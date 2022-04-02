@@ -1,3 +1,4 @@
+pub mod capsule;
 pub mod client;
 pub mod error;
 #[deny(missing_docs)]

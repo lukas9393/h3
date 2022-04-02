@@ -16,8 +16,8 @@ use futures_util::ready;
 use futures_util::stream::StreamExt as _;
 
 pub use quinn::{
-    self, crypto::Session, Endpoint, IncomingBiStreams, IncomingUniStreams, NewConnection, OpenBi,
-    OpenUni, VarInt, WriteError,
+    self, crypto::Session, Datagrams, Endpoint, IncomingBiStreams, IncomingUniStreams,
+    NewConnection, OpenBi, OpenUni, VarInt, WriteError,
 };
 
 use h3::quic::{self, Error, StreamId, WriteBuf};
@@ -28,6 +28,7 @@ pub struct Connection {
     opening_bi: Option<OpenBi>,
     incoming_uni: IncomingUniStreams,
     opening_uni: Option<OpenUni>,
+    datagrams: Datagrams,
 }
 
 impl Connection {
@@ -36,6 +37,7 @@ impl Connection {
             uni_streams,
             bi_streams,
             connection,
+            datagrams,
             ..
         } = new_conn;
 
@@ -45,6 +47,7 @@ impl Connection {
             opening_bi: None,
             incoming_uni: uni_streams,
             opening_uni: None,
+            datagrams: datagrams,
         }
     }
 }
