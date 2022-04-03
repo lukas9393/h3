@@ -3,8 +3,6 @@ use std::{convert::TryInto, fmt};
 use bytes::{Buf, BufMut, Bytes};
 use tracing::trace;
 
-use crate::capsule::Capsule;
-
 use super::{
     coding::Encode,
     stream::{InvalidStreamId, StreamId},
@@ -46,7 +44,6 @@ pub enum Frame<B> {
     PushPromise(PushPromise),
     Goaway(StreamId),
     MaxPushId(StreamId),
-    Capsule(Capsule),
 }
 
 /// Represents the available data len for a `Data` frame on a RecvStream
@@ -91,7 +88,6 @@ impl Frame<PayloadLen> {
             | FrameType::H2_PING
             | FrameType::H2_WINDOW_UPDATE
             | FrameType::H2_CONTINUATION => Err(Error::UnsupportedFrame(ty.0)),
-            FrameType::CAPSULE => Ok(Frame::Capsule(Capsule::decode(&mut payload)?)),
             _ => {
                 buf.advance(len as usize);
                 Err(Error::UnknownFrame(ty.0))
@@ -128,7 +124,6 @@ where
             Frame::CancelPush(id) => simple_frame_encode(FrameType::CANCEL_PUSH, *id, buf),
             Frame::Goaway(id) => simple_frame_encode(FrameType::GOAWAY, *id, buf),
             Frame::MaxPushId(id) => simple_frame_encode(FrameType::MAX_PUSH_ID, *id, buf),
-            Frame::Capsule(f) => f.encode(buf),
         }
     }
 }
@@ -185,7 +180,6 @@ impl fmt::Debug for Frame<PayloadLen> {
             Frame::PushPromise(frame) => write!(f, "PushPromise({})", frame.id),
             Frame::Goaway(id) => write!(f, "GoAway({})", id),
             Frame::MaxPushId(id) => write!(f, "MaxPushId({})", id),
-            Frame::Capsule(_) => write!(f, "Capsule"),
         }
     }
 }
@@ -203,7 +197,6 @@ where
             Frame::PushPromise(frame) => write!(f, "PushPromise({})", frame.id),
             Frame::Goaway(id) => write!(f, "GoAway({})", id),
             Frame::MaxPushId(id) => write!(f, "MaxPushId({})", id),
-            Frame::Capsule(_) => write!(f, "Capsule"),
         }
     }
 }
@@ -222,7 +215,6 @@ impl<T, U> PartialEq<Frame<T>> for Frame<U> {
             Frame::PushPromise(x) => matches!(other, Frame::PushPromise(y) if x == y),
             Frame::Goaway(x) => matches!(other, Frame::Goaway(y) if x == y),
             Frame::MaxPushId(x) => matches!(other, Frame::MaxPushId(y) if x == y),
-            Frame::Capsule(_) => todo!(),
         }
     }
 }
@@ -254,7 +246,9 @@ frame_types! {
     H2_WINDOW_UPDATE = 0x8,
     H2_CONTINUATION = 0x9,
     MAX_PUSH_ID = 0xD,
-    CAPSULE = 0xE,
+    ADDRESS_ASSIGN = 0xE,
+    ADDRESS_REQUEST = 0xF,
+    ROUTE_ADVERTISEMENT = 0x10,
 }
 
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]

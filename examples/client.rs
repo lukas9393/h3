@@ -3,11 +3,10 @@ use std::time::SystemTime;
 
 use futures::future;
 use h3_quinn::quinn;
-use http::Method;
 use rustls::{self, client::ServerCertVerified};
 use rustls::{Certificate, ServerName};
 use structopt::StructOpt;
-use tokio;
+use tokio::{self, io::AsyncWriteExt};
 
 use h3_quinn::{self, quinn::crypto::rustls::Error};
 
@@ -108,12 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = async move {
         eprintln!("Sending request ...");
 
-        let req = http::Request::builder()
-            .method(Method::CONNECT)
-            .uri(dest)
-            .header(":protocol", "connect-ip")
-            .header("Capsule-Protocol", "?1")
-            .body(())?;
+        let req = http::Request::builder().uri(dest).body(())?;
 
         let mut stream = send_request.send_request(req).await?;
         stream.finish().await?;
@@ -124,16 +118,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Response: {:?} {}", resp.version(), resp.status());
         eprintln!("Headers: {:#?}", resp.headers());
 
-        while let Some(capsule) = stream.recv_capsule().await? {
+        while let Some(mut chunk) = stream.recv_data().await? {
+            let capsule = h3::capsule::Capsule::decode(&mut chunk)?;
             match capsule {
-                h3::capsule::Capsule::AddressAssign(c) => {
-                    println!("AddressAssign: {}", c.ip_address)
+                h3::capsule::Capsule::AddressAssign(addr) => {
+                    eprintln!("IP Address {}", addr.ip_address)
                 }
-                h3::capsule::Capsule::AddressRequest(_) => (),
-                h3::capsule::Capsule::RouteAdvertisement(_) => (),
+                h3::capsule::Capsule::AddressRequest(_) => todo!(),
+                h3::capsule::Capsule::RouteAdvertisement(_) => todo!(),
             }
         }
-
         Ok::<_, Box<dyn std::error::Error>>(())
     };
 

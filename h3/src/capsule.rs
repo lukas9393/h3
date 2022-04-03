@@ -3,12 +3,9 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::{Buf, BufMut};
 
 use super::proto::varint::{BufExt, BufMutExt, UnexpectedEnd};
+use crate::error::{Code, Error};
 
 #[derive(Debug, PartialEq)]
-pub enum Error {
-    UnsupportedCapsule(u64), // Known Capsule that should generate an error
-}
-
 pub enum Capsule {
     AddressAssign(AddressAssign),
     AddressRequest(AddressRequest),
@@ -33,7 +30,7 @@ capsule_types! {
 pub struct CapsuleType(u64);
 
 impl CapsuleType {
-    fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
+    pub fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
         Ok(CapsuleType(buf.get_var()?))
     }
     pub fn encode<B: BufMut>(&self, buf: &mut B) {
@@ -67,7 +64,7 @@ impl CapsuleHeader for AddressAssign {
 }
 
 impl AddressAssign {
-    fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
+    pub fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
         let ip_version = buf.get_u8();
         let ip_address = match ip_version {
             4 => {
@@ -88,7 +85,7 @@ impl AddressAssign {
         })
     }
 
-    fn encode<B: BufMut>(&self, buf: &mut B) {
+    pub fn encode<B: BufMut>(&self, buf: &mut B) {
         self.encode_header(buf);
 
         match self.ip_address {
@@ -123,7 +120,7 @@ impl CapsuleHeader for AddressRequest {
 }
 
 impl AddressRequest {
-    fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
+    pub fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
         let ip_version = buf.get_u8();
         let ip_address = match ip_version {
             4 => {
@@ -144,7 +141,7 @@ impl AddressRequest {
         })
     }
 
-    fn encode<B: BufMut>(&self, buf: &mut B) {
+    pub fn encode<B: BufMut>(&self, buf: &mut B) {
         self.encode_header(buf);
 
         match self.ip_address {
@@ -175,7 +172,7 @@ impl CapsuleHeader for RouteAdvertisement {
 }
 
 impl RouteAdvertisement {
-    fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
+    pub fn decode<B: Buf>(buf: &mut B) -> Result<Self, UnexpectedEnd> {
         let mut ranges = Vec::new();
         while buf.has_remaining() {
             ranges.push(IpAddressRange::decode(buf)?);
@@ -183,7 +180,7 @@ impl RouteAdvertisement {
         Ok(RouteAdvertisement { ranges })
     }
 
-    fn encode<B: BufMut>(&self, buf: &mut B) {
+    pub fn encode<B: BufMut>(&self, buf: &mut B) {
         self.encode_header(buf);
 
         for range in &self.ranges {
@@ -263,20 +260,29 @@ impl IpAddressRange {
 }
 
 impl Capsule {
-    pub fn decode<B: Buf>(buf: &mut B) -> Result<Capsule, UnexpectedEnd> {
-        let ty = CapsuleType::decode(buf)?;
+    pub fn decode<B: Buf>(buf: &mut B) -> Result<Capsule, Error> {
+        let remaining = buf.remaining();
+        let ty = CapsuleType::decode(buf).unwrap();
+        let len = buf.get_var().unwrap();
+
+        if buf.remaining() < len as usize {
+            todo!();
+        }
+
+        let mut payload = buf.take(len as usize);
+
         let capsule = match ty {
             CapsuleType::ADDRESS_ASSIGN => {
-                let address_assign = AddressAssign::decode(buf)?;
+                let address_assign = AddressAssign::decode(&mut payload).unwrap();
                 Capsule::AddressAssign(address_assign)
             }
             CapsuleType::ADDRESS_REQUEST => {
-                let address_request = AddressRequest::decode(buf)?;
+                let address_request = AddressRequest::decode(&mut payload).unwrap();
                 Capsule::AddressRequest(address_request)
             }
 
             CapsuleType::ROUTE_ADVERTISEMENT => {
-                let route_advertisement = RouteAdvertisement::decode(buf)?;
+                let route_advertisement = RouteAdvertisement::decode(&mut payload).unwrap();
                 Capsule::RouteAdvertisement(route_advertisement)
             }
             // _ => Err(Error::UnsupportedCapsule(ty.0)),

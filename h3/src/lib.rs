@@ -1,11 +1,12 @@
-pub mod capsule;
 pub mod client;
 pub mod error;
+pub mod capsule;
 #[deny(missing_docs)]
 pub mod quic;
 pub mod server;
 
 pub use error::Error;
+
 
 mod buf;
 mod connection;

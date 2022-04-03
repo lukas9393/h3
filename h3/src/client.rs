@@ -11,7 +11,6 @@ use http::{request, HeaderMap, Response};
 use tracing::{info, trace};
 
 use crate::{
-    capsule::Capsule,
     connection::{self, ConnectionInner, ConnectionState, SharedStateRef},
     error::{Code, Error},
     frame::FrameStream,
@@ -323,10 +322,6 @@ where
         self.inner.recv_data().await
     }
 
-    pub async fn recv_capsule(&mut self) -> Result<Option<Capsule>, Error> {
-        self.inner.recv_capsule().await
-    }
-
     pub async fn recv_trailers(&mut self) -> Result<Option<HeaderMap>, Error> {
         let res = self.inner.recv_trailers().await;
         if let Err(ref e) = res {
@@ -353,10 +348,6 @@ where
 
     pub async fn send_trailers(&mut self, trailers: HeaderMap) -> Result<(), Error> {
         self.inner.send_trailers(trailers).await
-    }
-
-    pub async fn send_capsule(&mut self, capsule: Capsule) -> Result<(), Error> {
-        self.inner.send_capsule(capsule).await
     }
 
     pub async fn finish(&mut self) -> Result<(), Error> {

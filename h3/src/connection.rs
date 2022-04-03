@@ -10,7 +10,6 @@ use futures_util::{future, ready};
 use http::HeaderMap;
 
 use crate::{
-    capsule::Capsule,
     error::{Code, Error},
     frame::FrameStream,
     proto::{
@@ -360,22 +359,6 @@ where
         Ok(data)
     }
 
-    pub async fn recv_capsule(&mut self) -> Result<Option<Capsule>, Error> {
-        let frame = future::poll_fn(|cx| self.stream.poll_next(cx))
-            .await
-            .map_err(|e| self.maybe_conn_err(e))?
-            .ok_or_else(|| {
-                Code::H3_GENERAL_PROTOCOL_ERROR.with_reason("Did not receive capsule data")
-            })?;
-
-        let capsule = match frame {
-            Frame::Capsule(capsule) => capsule,
-            _ => return Err(Code::H3_FRAME_UNEXPECTED.with_reason("TODO")),
-        };
-
-        Ok(Some(capsule))
-    }
-
     /// Receive trailers
     pub async fn recv_trailers(&mut self) -> Result<Option<HeaderMap>, Error> {
         let mut trailers = if let Some(encoded) = self.trailers.take() {
@@ -432,14 +415,6 @@ where
     pub async fn send_data(&mut self, buf: B) -> Result<(), Error> {
         let frame = Frame::Data(buf);
         stream::write(&mut self.stream, frame)
-            .await
-            .map_err(|e| self.maybe_conn_err(e))?;
-
-        Ok(())
-    }
-
-    pub async fn send_capsule(&mut self, capsule: Capsule) -> Result<(), Error> {
-        stream::write(&mut self.stream, Frame::Capsule(capsule))
             .await
             .map_err(|e| self.maybe_conn_err(e))?;
 

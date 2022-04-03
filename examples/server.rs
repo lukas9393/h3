@@ -1,30 +1,31 @@
-use std::{
-    net::{IpAddr, Ipv4Addr, SocketAddr},
-    path::PathBuf,
-    sync::Arc,
-};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
+use h3::{quic::BidiStream, server::RequestStream};
 use http::{Request, StatusCode};
 use rustls::{Certificate, PrivateKey};
+use std::net::{IpAddr, Ipv4Addr};
 use structopt::StructOpt;
 use tokio::{fs::File, io::AsyncReadExt};
 use tracing::{debug, error, info, trace_span, warn};
-
-use h3::{
-    capsule::{AddressAssign, Capsule},
-    quic::BidiStream,
-    server::RequestStream,
-};
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "server")]
 struct Opt {
     #[structopt(
+        name = "dir",
         short,
         long,
-        default_value = "0.0.0.0:4433",
+        help = "Root directory of the files to serve. \
+                If omitted, server will respond OK."
+    )]
+    pub root: Option<PathBuf>,
+
+    #[structopt(
+        short,
+        long,
+        default_value = "127.0.0.1:4433",
         help = "What address:port to listen for new connections"
     )]
     pub listen: SocketAddr,
@@ -58,6 +59,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let opt = Opt::from_args();
 
+    let root = if let Some(root) = opt.root {
+        if !root.is_dir() {
+            return Err(format!("{}: is not a readable directory", root.display()).into());
+        } else {
+            info!("serving {}", root.display());
+            Arc::new(Some(root))
+        }
+    } else {
+        Arc::new(None)
+    };
+
     let crypto = load_crypto(opt.certs).await?;
     let server_config = h3_quinn::quinn::ServerConfig::with_crypto(Arc::new(crypto));
     let (endpoint, mut incoming) = h3_quinn::quinn::Endpoint::server(server_config, opt.listen)?;
@@ -67,6 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(new_conn) = incoming.next().await {
         trace_span!("New connection being attempted");
 
+        let root = root.clone();
         tokio::spawn(async move {
             match new_conn.await {
                 Ok(conn) => {
@@ -77,10 +90,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .unwrap();
 
                     while let Some((req, stream)) = h3_conn.accept().await.unwrap() {
+                        let root = root.clone();
                         debug!("New request: {:#?}", req);
 
                         tokio::spawn(async {
-                            if let Err(e) = handle_request(req, stream).await {
+                            if let Err(e) = handle_request(req, stream, root).await {
                                 error!("request failed: {}", e);
                             }
                         });
@@ -101,14 +115,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn handle_request<T>(
     req: Request<()>,
     mut stream: RequestStream<T, Bytes>,
+    serve_root: Arc<Option<PathBuf>>,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     T: BidiStream<Bytes>,
 {
-    let status = if req.uri().path().contains("..") {
-        StatusCode::NOT_FOUND
-    } else {
-        StatusCode::OK
+    let (status, to_serve) = match serve_root.as_deref() {
+        None => (StatusCode::OK, None),
+        Some(_) if req.uri().path().contains("..") => (StatusCode::NOT_FOUND, None),
+        Some(root) => {
+            let to_serve = root.join(req.uri().path().strip_prefix("/").unwrap_or(""));
+            match File::open(&to_serve).await {
+                Ok(file) => (StatusCode::OK, Some(file)),
+                Err(e) => {
+                    debug!("failed to open: \"{}\": {}", to_serve.to_string_lossy(), e);
+                    (StatusCode::NOT_FOUND, None)
+                }
+            }
+        }
     };
 
     let resp = http::Response::builder().status(status).body(()).unwrap();
@@ -122,11 +146,24 @@ where
         }
     }
 
-    // let capsule = Capsule::AddressAssign(AddressAssign {
-    //     ip_address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 11)),
-    //     ip_prefix_length: 32,
-    // });
-    // stream.send_capsule(capsule).await?;
+    let address_assign = h3::capsule::AddressAssign {
+        ip_address: IpAddr::V4(Ipv4Addr::new(192, 0, 2, 11)),
+        ip_prefix_length: 32,
+    };
+
+    let mut buf = BytesMut::with_capacity(4096 * 10);
+    address_assign.encode(&mut buf);
+    stream.send_data(buf.freeze()).await?;
+
+    // if let Some(mut file) = to_serve {
+    //     loop {
+    //         let mut buf = BytesMut::with_capacity(4096 * 10);
+    //         if file.read_buf(&mut buf).await? == 0 {
+    //             break;
+    //         }
+    //         stream.send_data(buf.freeze()).await?;
+    //     }
+    // }
 
     Ok(stream.finish().await?)
 }
