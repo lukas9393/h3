@@ -120,7 +120,7 @@ async fn handle_request<T>(
 where
     T: BidiStream<Bytes>,
 {
-    let (status, to_serve) = match serve_root.as_deref() {
+    let (status, _to_serve) = match serve_root.as_deref() {
         None => (StatusCode::OK, None),
         Some(_) if req.uri().path().contains("..") => (StatusCode::NOT_FOUND, None),
         Some(root) => {

@@ -3,10 +3,10 @@ use std::time::SystemTime;
 
 use futures::future;
 use h3_quinn::quinn;
+use http::Method;
 use rustls::{self, client::ServerCertVerified};
 use rustls::{Certificate, ServerName};
 use structopt::StructOpt;
-use tokio::{self, io::AsyncWriteExt};
 
 use h3_quinn::{self, quinn::crypto::rustls::Error};
 
@@ -107,7 +107,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = async move {
         eprintln!("Sending request ...");
 
-        let req = http::Request::builder().uri(dest).body(())?;
+        let req = http::Request::builder()
+            .uri(dest)
+            .method(Method::CONNECT)
+            .header(":protocol", "connect-ip")
+            .header("capsule-protocol", "?1")
+            .body(())?;
 
         let mut stream = send_request.send_request(req).await?;
         stream.finish().await?;

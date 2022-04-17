@@ -49,6 +49,14 @@ where
     T: quic::OpenStreams<B>,
     B: Buf,
 {
+    pub fn send_datagrams(&self) -> T::SendDatagrams {
+        self.open.send_datagrams()
+    }
+
+    pub fn recieve_datagrams(&self) -> T::RecvDatagrams {
+        self.open.recieve_datagrams()
+    }
+
     pub async fn send_request(
         &mut self,
         req: http::Request<()>,

@@ -9,7 +9,7 @@ use std::{
     task::{self, Poll},
 };
 
-use bytes::{Buf, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures_util::future::FutureExt as _;
 use futures_util::io::AsyncWrite as _;
 use futures_util::ready;
@@ -150,6 +150,7 @@ where
     fn opener(&self) -> Self::OpenStreams {
         OpenStreams {
             conn: self.conn.clone(),
+            datagrams: self.datagrams.clone(),
             opening_bi: None,
             opening_uni: None,
         }
@@ -165,6 +166,7 @@ where
 
 pub struct OpenStreams {
     conn: quinn::Connection,
+    datagrams: Datagrams,
     opening_bi: Option<OpenBi>,
     opening_uni: Option<OpenUni>,
 }
@@ -176,6 +178,8 @@ where
     type RecvStream = RecvStream;
     type SendStream = SendStream<B>;
     type BidiStream = BidiStream<B>;
+    type SendDatagrams = SendDatagrams;
+    type RecvDatagrams = RecvDatagrams;
     type Error = ConnectionError;
 
     fn poll_open_bidi(
@@ -211,12 +215,21 @@ where
             reason,
         );
     }
+
+    fn send_datagrams(&self) -> Self::SendDatagrams {
+        SendDatagrams::new(self.conn.clone())
+    }
+
+    fn recieve_datagrams(&self) -> RecvDatagrams {
+        RecvDatagrams::new(self.datagrams.clone())
+    }
 }
 
 impl Clone for OpenStreams {
     fn clone(&self) -> Self {
         Self {
             conn: self.conn.clone(),
+            datagrams: self.datagrams.clone(),
             opening_bi: None,
             opening_uni: None,
         }
@@ -321,6 +334,31 @@ impl quic::RecvStream for RecvStream {
     }
 }
 
+pub struct RecvDatagrams {
+    datagrams: quinn::Datagrams,
+}
+
+impl RecvDatagrams {
+    fn new(datagrams: quinn::Datagrams) -> Self {
+        Self { datagrams }
+    }
+}
+
+impl quic::RecvDatagrams for RecvDatagrams {
+    type Buf = Bytes;
+    type Error = ConnectionError;
+
+    fn poll_data(
+        &mut self,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Self::Buf, Self::Error>>> {
+        Poll::Ready(
+            ready!(self.datagrams.poll_next_unpin(cx))
+                .map(|b| b.map_err(|err| ConnectionError(err))),
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct ReadError(quinn::ReadError);
 
@@ -360,6 +398,85 @@ impl Error for ReadError {
             quinn::ReadError::Reset(error_code) => Some(error_code.into_inner()),
             _ => None,
         }
+    }
+}
+
+pub struct SendDatagrams {
+    conn: quinn::Connection,
+}
+
+impl SendDatagrams {
+    fn new(conn: quinn::Connection) -> SendDatagrams {
+        Self { conn }
+    }
+}
+
+impl quic::SendDatagrams for SendDatagrams {
+    type Error = SendDatagramsError;
+
+    fn max_datagram_size(&self) -> Option<usize> {
+        self.conn.max_datagram_size()
+    }
+
+    fn send_datagrams<B: Buf>(&mut self, data: B) -> Result<(), Self::Error> {
+        let mut ret = BytesMut::with_capacity(data.remaining());
+        ret.put(data);
+        let data = ret.freeze();
+
+        match self.conn.send_datagram(data) {
+            Ok(_) => Ok(()),
+            Err(_) => todo!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SendDatagramsError {
+    Write(WriteError),
+    NotReady,
+}
+
+impl std::error::Error for SendDatagramsError {}
+
+impl Display for SendDatagramsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl From<WriteError> for SendDatagramsError {
+    fn from(e: WriteError) -> Self {
+        Self::Write(e)
+    }
+}
+
+impl Error for SendDatagramsError {
+    fn is_timeout(&self) -> bool {
+        match self {
+            Self::Write(quinn::WriteError::ConnectionLost(quinn::ConnectionError::TimedOut)) => {
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn err_code(&self) -> Option<u64> {
+        match self {
+            Self::Write(quinn::WriteError::Stopped(error_code)) => Some(error_code.into_inner()),
+            Self::Write(quinn::WriteError::ConnectionLost(
+                quinn::ConnectionError::ApplicationClosed(quinn_proto::ApplicationClose {
+                    error_code,
+                    ..
+                }),
+            )) => Some(error_code.into_inner()),
+            _ => None,
+        }
+    }
+}
+
+impl From<SendDatagramsError> for Arc<dyn Error> {
+    fn from(e: SendDatagramsError) -> Self {
+        Arc::new(e)
     }
 }
 

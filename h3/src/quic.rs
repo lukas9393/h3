@@ -87,6 +87,10 @@ pub trait OpenStreams<B: Buf> {
     type RecvStream: RecvStream;
     /// Error type yielded by these trait methods
     type Error: Into<Box<dyn Error>>;
+    /// The type of the send datagram
+    type SendDatagrams: SendDatagrams;
+    /// The type of the recieve datagram
+    type RecvDatagrams: RecvDatagrams;
 
     /// Poll the connection to create a new bidirectional stream.
     fn poll_open_bidi(
@@ -102,6 +106,12 @@ pub trait OpenStreams<B: Buf> {
 
     /// Close the connection immediately
     fn close(&mut self, code: crate::error::Code, reason: &[u8]);
+
+    /// Get an Send Datagram object
+    fn send_datagrams(&self) -> Self::SendDatagrams;
+
+    /// Get an Recieve Datagram object
+    fn recieve_datagrams(&self) -> Self::RecvDatagrams;
 }
 
 /// A trait describing the "send" actions of a QUIC stream.
@@ -123,6 +133,32 @@ pub trait SendStream<B: Buf> {
 
     /// Get QUIC send stream id
     fn id(&self) -> StreamId;
+}
+
+/// A trait describing the "send" actions of a QUIC datagram "stream".
+pub trait SendDatagrams {
+    /// The error type returned by fallible send methods.
+    type Error: Into<Box<dyn Error>>;
+
+    /// Compute the maximum size of datagrams that may be passed to [`send_datagram()`].
+    fn max_datagram_size(&self) -> Option<usize>;
+
+    /// Transmit `data` as an unreliable, unordered application datagram.
+    fn send_datagrams<B: Buf>(&mut self, data: B) -> Result<(), Self::Error>;
+}
+
+/// A trait describing the "send" actions of a QUIC datagram "stream".
+pub trait RecvDatagrams {
+    /// The type of `Buf` for data received on this stream.
+    type Buf: Buf;
+    /// The error type that can occur when receiving data.
+    type Error: Into<Box<dyn Error>>;
+
+    /// TODO
+    fn poll_data(
+        &mut self,
+        cx: &mut task::Context<'_>,
+    ) -> Poll<Option<Result<Self::Buf, Self::Error>>>;
 }
 
 /// A trait describing the "receive" actions of a QUIC stream.

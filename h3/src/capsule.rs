@@ -3,7 +3,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use bytes::{Buf, BufMut};
 
 use super::proto::varint::{BufExt, BufMutExt, UnexpectedEnd};
-use crate::error::{Code, Error};
+use crate::error::Error;
 
 #[derive(Debug, PartialEq)]
 pub enum Capsule {
@@ -261,7 +261,7 @@ impl IpAddressRange {
 
 impl Capsule {
     pub fn decode<B: Buf>(buf: &mut B) -> Result<Capsule, Error> {
-        let remaining = buf.remaining();
+        // let remaining = buf.remaining();
         let ty = CapsuleType::decode(buf).unwrap();
         let len = buf.get_var().unwrap();
 
