@@ -7,8 +7,10 @@ edition = "2018"
 [dependencies]
 h3 = { path = "../h3" }
 bytes = "1"
-quinn = { path= "../../quinn/quinn", default-features = false}
-quinn-proto = { path= "../../quinn/quinn-proto", default-features = false }
+quinn = { git = "https://github.com/lukas9393/quinn.git", branch = "connect-ip", default-features = false }
+quinn-proto =  { git = "https://github.com/lukas9393/quinn.git", branch = "connect-ip", default-features = false }
+# quinn = { path= "../../quinn/quinn", default-features = false}
+# quinn-proto = { path= "../../quinn/quinn-proto", default-features = false }
 futures-util = { version = "0.3", default-features = false, features = ["io"] }
 
 [dev-dependencies]
