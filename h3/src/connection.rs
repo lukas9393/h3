@@ -94,6 +94,14 @@ where
     C: quic::Connection<B>,
     B: Buf,
 {
+    pub fn send_datagrams(&self) -> C::SendDatagrams {
+        self.conn.send_datagrams()
+    }
+
+    pub fn recieve_datagrams(&self) -> C::RecvDatagrams {
+        self.conn.recieve_datagrams()
+    }
+
     pub async fn new(
         mut conn: C,
         max_field_section_size: u64,

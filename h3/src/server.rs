@@ -63,6 +63,14 @@ where
     C: quic::Connection<B>,
     B: Buf,
 {
+    pub fn send_datagrams(&self) -> C::SendDatagrams {
+        self.inner.send_datagrams()
+    }
+
+    pub fn recieve_datagrams(&self) -> C::RecvDatagrams {
+        self.inner.recieve_datagrams()
+    }
+
     pub async fn accept(
         &mut self,
     ) -> Result<Option<(Request<()>, RequestStream<C::BidiStream, B>)>, Error> {

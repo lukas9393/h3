@@ -41,6 +41,10 @@ pub trait Connection<B: Buf> {
     type OpenStreams: OpenStreams<B>;
     /// Error type yielded by this trait methods
     type Error: Into<Box<dyn Error>>;
+    /// The type of the send datagram
+    type SendDatagrams: SendDatagrams;
+    /// The type of the recieve datagram
+    type RecvDatagrams: RecvDatagrams;
 
     /// Accept an incoming unidirecional stream
     ///
@@ -75,6 +79,12 @@ pub trait Connection<B: Buf> {
 
     /// Close the connection immediately
     fn close(&mut self, code: crate::error::Code, reason: &[u8]);
+
+    /// Get an Send Datagram object
+    fn send_datagrams(&self) -> Self::SendDatagrams;
+
+    /// Get an Recieve Datagram object
+    fn recieve_datagrams(&self) -> Self::RecvDatagrams;
 }
 
 /// Trait for opening outgoing streams

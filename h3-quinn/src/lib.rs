@@ -93,6 +93,8 @@ where
     type RecvStream = RecvStream;
     type BidiStream = BidiStream<B>;
     type OpenStreams = OpenStreams;
+    type SendDatagrams = SendDatagrams;
+    type RecvDatagrams = RecvDatagrams;
     type Error = ConnectionError;
 
     fn poll_accept_bidi(
@@ -161,6 +163,14 @@ where
             VarInt::from_u64(code.value()).expect("error code VarInt"),
             reason,
         );
+    }
+
+    fn send_datagrams(&self) -> Self::SendDatagrams {
+        SendDatagrams::new(self.conn.clone())
+    }
+
+    fn recieve_datagrams(&self) -> RecvDatagrams {
+        RecvDatagrams::new(self.datagrams.clone())
     }
 }
 
